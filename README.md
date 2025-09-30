@@ -1,4 +1,4 @@
 # QueryStore
 
-This repo represnets queries and presentations on the topic of Query Store.
+This repo holds queries and presentations on the topic of Query Store.
 
