@@ -4,10 +4,10 @@ Date: September 2025
 Purpose:This query retrieves the queryIDs, query hash and average CPU for those queries in a given time range and compares 
 the AVG CPU metric from before and after.
 
-This is useful for captureing performance prior to a SQL Server migration and then after for the same set of queries.
+This is useful for capturing performance prior to a SQL Server migration and then after for the same set of queries.
 This could also be useful for a before/after comparison after any change to a query.
 
-This sort of query cuold be done with other query perofrmance metrics stored in Query Store.
+This sort of query could be done with other query perofrmance metrics stored in Query Store.
 
 */
 
@@ -27,7 +27,7 @@ AS (
 	qsrsi.runtime_stats_interval_id
 JOIN sys.query_store_query_text qsqt
     ON qsq.query_text_id = qsqt.query_text_id
-	WHERE qsrsi.start_time >= '2025-09-27 15:00:00'
+	WHERE qsrsi.start_time >= '2025-09-20 00:00:01'
 		AND qsrsi.end_time < '2025-09-27 16:00:00'
 	GROUP BY qsq.query_hash
 		,qsq.query_id
@@ -47,7 +47,7 @@ AS (
 JOIN sys.query_store_query_text qsqt
     ON qsq.query_text_id = qsqt.query_text_id 
 	WHERE qsrsi.start_time >= '2025-09-27 16:00:00'
-		AND qsrsi.end_time < '2025-10-01 00:00:00'
+		AND qsrsi.end_time < '2025-10-03 00:00:00'
 		AND qsq.query_id IN (
 			
 SELECT query_id
