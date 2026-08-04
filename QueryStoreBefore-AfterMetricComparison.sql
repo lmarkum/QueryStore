@@ -45,10 +45,11 @@ DECLARE @BeforeStart DATETIME = '2026-07-30';
 DECLARE @BeforeEnd DATETIME = '2026-08-02';
 DECLARE @AfterStart DATETIME = '2026-08-02';
 DECLARE @AfterEnd DATETIME = '2026-08-04';
+DECLARE @TopCount int = 10;
 
 WITH BaselineTopQueries
 AS (
-	SELECT TOP 10 qsq.query_hash
+	SELECT TOP(@TopCount) qsq.query_hash
 		,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_cpu_time) AS avg_cpu_time_baseline
@@ -106,7 +107,7 @@ ORDER BY BTQ.avg_cpu_time_baseline DESC;
 --First CTE: Get top 10 intensive queries by avg_logical_io_reads from before the migration
 WITH BaselineTopQueries
 AS (
-	SELECT TOP 10 qsq.query_hash
+	SELECT TOP(@TopCount) qsq.query_hash
 		,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_logical_io_reads) AS avg_logical_io_reads_baseline
@@ -161,7 +162,7 @@ ORDER BY BTQ.avg_logical_io_reads_baseline DESC;
 --First CTE: Get top 10 intensive queries by avg_logical_io_writes from before the migration
 WITH BaselineTopQueries
 AS (
-	SELECT TOP 10 qsq.query_hash
+	SELECT TOP(@TopCount) qsq.query_hash
 		,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_logical_io_writes) AS avg_logical_io_writes_baseline
@@ -216,7 +217,7 @@ ORDER BY BTQ.avg_logical_io_writes_baseline DESC;
 --First CTE: Get top 10 intensive queries by avg_query_max_used_memory from before the migration
 WITH BaselineTopQueries
 AS (
-	SELECT TOP 10 qsq.query_hash
+	SELECT TOP(@TopCount) qsq.query_hash
 		,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_query_max_used_memory) AS avg_query_max_used_memory_baseline
