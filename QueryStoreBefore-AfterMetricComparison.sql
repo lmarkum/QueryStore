@@ -36,507 +36,236 @@ Requirement: Query Store must have been enabled and in ReadWrite mode during the
 
 */
 
- 
-
 --First CTE: Get top 10 CPU-intensive queries from before the migration
 
- 
-
 USE SomeDB;
-
 GO
 
- 
+DECLARE @BeforeStart DATETIME = '2026-07-30';
+DECLARE @BeforeEnd DATETIME = '2026-08-02';
+DECLARE @AfterStart DATETIME = '2026-08-02';
+DECLARE @AfterEnd DATETIME = '2026-08-04';
 
-DECLARE @BeforeStart datetime = '2026-07-30';
-
-DECLARE @BeforeEnd   datetime = '2026-08-01 23:59:59';
-
- 
-
-DECLARE @AfterStart  datetime = '2026-08-02';
-
-DECLARE @AfterEnd    datetime = '2026-08-04';
-
- 
-
-WITH FilteredTop10
-
+WITH BaselineTopQueries
 AS (
-
-                SELECT TOP 10 qsq.query_hash,qsq.query_id, qsqt.query_sql_text
-
-                                ,SUM(qsrs.avg_cpu_time) AS avg_cpu_time_early
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @BeforeStart
-
-                                AND qsrsi.end_time < @BeforeEnd
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                ORDER BY SUM(qsrs.avg_cpu_time) DESC
-
-                )
-
- 
-
---Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
-
-,LaterCpuStats
-
+	SELECT TOP 10 qsq.query_hash
+		,qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_cpu_time) AS avg_cpu_time_baseline
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @BeforeStart
+		AND qsrsi.end_time < @BeforeEnd
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	ORDER BY SUM(qsrs.avg_cpu_time) DESC
+	)
+	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
+	,LaterCpuStats
 AS (
+	SELECT TOP qsq.query_hash
+		,qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_cpu_time) AS avg_cpu_time_later
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @AfterStart
+		AND qsrsi.end_time < @AfterEnd
+		AND qsq.query_id IN (
+			SELECT query_id
+			FROM BaselineTopQueries
+			)
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
 
-                SELECT qsq.query_id,qsqt.query_sql_text,AVG(qsrs.avg_cpu_time) AS avg_cpu_time_late
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @AfterStart
-
-                                AND qsrsi.end_time < @AfterEnd
-
-                                AND qsq.query_id IN
-
-                                (
-
-                                               
-
-                                                SELECT query_id
-
-                                                FROM FilteredTop10
-
- 
-
-                                )
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                )
-
- 
-
- 
-
-                --Final output: Compare early vs. late CPU average usage
-
-SELECT f.query_hash
-
-                ,f.query_id
-
-, f.query_sql_text
-
-                ,f.avg_cpu_time_early
-
-                ,l.avg_cpu_time_late
-
-                ,(ISNULL(l.avg_cpu_time_late, 0) - f.avg_cpu_time_early) AS cpu_change
-
-FROM FilteredTop10 f
-
-LEFT JOIN LaterCpuStats l ON f.query_id = l.query_id
-
-ORDER BY f.avg_cpu_time_early DESC;
-
- 
-
- 
-
- 
-
- 
+	)
+--Final output: Compare early vs. late CPU average usage
+SELECT BTQ.query_hash
+	,BTQ.query_id
+	,BTQ.query_sql_text
+    ,BTQ.ExecutionCount AS BaselineExecutioncount
+    ,l.Executioncount AS LaterExecutionCount
+	,BT.avg_cpu_time_baseline
+	,l.avg_cpu_time_late
+	,(ISNULL(l.avg_cpu_time_late, 0) - BTQ.avg_cpu_time_baseline) AS cpu_change
+FROM BaselineTopQueries AS BTQ
+LEFT JOIN LaterCpuStats l ON BTQ.query_id = l.query_id
+ORDER BY BTQ.avg_cpu_time_baseline DESC;
 
 /*********************************/
-
- 
-
- 
-
 --First CTE: Get top 10 intensive queries by avg_logical_io_reads from before the migration
-
-
-WITH FilteredTop10
-
+WITH BaselineTopQueries
 AS (
-
-                SELECT TOP 10 qsq.query_hash,qsq.query_id, qsqt.query_sql_text
-
-                                ,SUM(qsrs.avg_logical_io_reads) AS avg_logical_io_reads_early
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @BeforeStart
-
-                                AND qsrsi.end_time < @BeforeEnd
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                ORDER BY SUM(qsrs.avg_logical_io_reads) DESC
-
-                )
-
- 
-
---Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
-
-,LaterStats
-
+	SELECT TOP 10 qsq.query_hash
+		,qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_logical_io_reads) AS avg_logical_io_reads_baseline
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @BeforeStart
+		AND qsrsi.end_time < @BeforeEnd
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	ORDER BY SUM(qsrs.avg_logical_io_reads) DESC
+	)
+	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
+	,LaterStats
 AS (
-
-                SELECT qsq.query_id,qsqt.query_sql_text,AVG(qsrs.avg_logical_io_reads) AS avg_logical_io_reads_late
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @AfterStart
-
-                                AND qsrsi.end_time < @AfterEnd
-
-                                AND qsq.query_id IN
-
-                                (
-
-                                               
-
-                                                SELECT query_id
-
-                                                FROM FilteredTop10
-
- 
-
-                                )
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                )
-
- 
-
- 
-
-                --Final output: Compare early vs. late stats
-
-SELECT f.query_hash
-
-                ,f.query_id
-
-, f.query_sql_text
-
-                ,f.avg_logical_io_reads_early
-
-                ,l.avg_logical_io_reads_late
-
-                ,(ISNULL(l.avg_logical_io_reads_late, 0) - f.avg_logical_io_reads_early) AS avg_logical_io_reads_change
-
-FROM FilteredTop10 f
-
-LEFT JOIN LaterStats l ON f.query_id = l.query_id
-
-ORDER BY f.avg_logical_io_reads_early DESC;
-
- 
-
- 
-
- 
+	SELECT qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_logical_io_reads) AS avg_logical_io_reads_later
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @AfterStart
+		AND qsrsi.end_time < @AfterEnd
+		AND qsq.query_id IN (
+			SELECT query_id
+			FROM BaselineTopQueries
+			)
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	)
+--Final output: Compare early vs. late stats
+SELECT BTQ.query_hash
+	,BTQ.query_id
+	,BTQ.query_sql_text
+    ,BTQ.ExecutionCount AS BaselineExecutioncount
+    ,l.Executioncount AS LaterExecutionCount
+	,BTQ.avg_logical_io_reads_baseline
+	,l.avg_logical_io_reads_late
+	,(ISNULL(l.avg_logical_io_reads_late, 0) - BTQ.avg_logical_io_reads_baseline) AS avg_logical_io_reads_change
+FROM BaselineTopQueries AS BTQ
+LEFT JOIN LaterStats l ON BTQ.query_id = l.query_id
+ORDER BY BTQ.avg_logical_io_reads_baseline DESC;
 
 --First CTE: Get top 10 intensive queries by avg_logical_io_writes from before the migration
-
-
-
-WITH FilteredTop10
-
+WITH BaselineTopQueries
 AS (
-
-                SELECT TOP 10 qsq.query_hash,qsq.query_id, qsqt.query_sql_text
-
-                                ,SUM(qsrs.avg_logical_io_writes) AS avg_logical_io_writes_early
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @BeforeStart
-
-                                AND qsrsi.end_time < @BeforeEnd
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                ORDER BY SUM(qsrs.avg_logical_io_writes) DESC
-
-                )
-
- 
-
---Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
-
-,LaterStats
-
+	SELECT TOP 10 qsq.query_hash
+		,qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_logical_io_writes) AS avg_logical_io_writes_baseline
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @BeforeStart
+		AND qsrsi.end_time < @BeforeEnd
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	ORDER BY SUM(qsrs.avg_logical_io_writes) DESC
+	)
+	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
+	,LaterStats
 AS (
-
-                SELECT qsq.query_id,qsqt.query_sql_text,AVG(qsrs.avg_logical_io_writes) AS avg_logical_io_writes_late
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @AfterStart
-
-                                AND qsrsi.end_time < @AfterEnd
-
-                                AND qsq.query_id IN
-
-                                (
-
-                                               
-
-                                                SELECT query_id
-
-                                                FROM FilteredTop10
-
- 
-
-                                )
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                )
-
- 
-
- 
-
-                --Final output: Compare early vs. late stats
-
-SELECT f.query_hash
-
-                ,f.query_id
-
-, f.query_sql_text
-
-                ,f.avg_logical_io_writes_early
-
-                ,l.avg_logical_io_writes_late
-
-                ,(ISNULL(l.avg_logical_io_writes_late, 0) - f.avg_logical_io_writes_early) AS avg_logical_io_writes_change
-
-FROM FilteredTop10 f
-
-LEFT JOIN LaterStats l ON f.query_id = l.query_id
-
-ORDER BY f.avg_logical_io_writes_early DESC;
-
- 
-
- 
-
- 
-
- 
+	SELECT qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_logical_io_writes) AS avg_logical_io_writes_later
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @AfterStart
+		AND qsrsi.end_time < @AfterEnd
+		AND qsq.query_id IN (
+			SELECT query_id
+			FROM BaselineTopQueries
+			)
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	)
+--Final output: Compare early vs. late stats
+SELECT BTQ.query_hash
+	,BTQ.query_id
+	,BTQ.query_sql_text
+    ,BTQ.ExecutionCount AS BaselineExecutioncount
+    ,l.Executioncount AS LaterExecutionCount
+	,BTQ.avg_logical_io_writes_baseline
+	,l.avg_logical_io_writes_late
+	,(ISNULL(l.avg_logical_io_writes_late, 0) - BTQ.avg_logical_io_writes_baseline) AS avg_logical_io_writes_change
+FROM BaselineTopQueries AS BTQ
+LEFT JOIN LaterStats l ON BTQ.query_id = l.query_id
+ORDER BY BTQ.avg_logical_io_writes_baseline DESC;
 
 --First CTE: Get top 10 intensive queries by avg_query_max_used_memory from before the migration
-
-
-
-WITH FilteredTop10
-
+WITH BaselineTopQueries
 AS (
-
-                SELECT TOP 10 qsq.query_hash,qsq.query_id, qsqt.query_sql_text
-
-                                ,SUM(qsrs.avg_query_max_used_memory) AS avg_query_max_used_memory_early
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @BeforeStart
-
-                                AND qsrsi.end_time < @BeforeEnd
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                ORDER BY SUM(qsrs.avg_query_max_used_memory) DESC
-
-                )
-
- 
-
---Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
-
-,LaterStats
-
+	SELECT TOP 10 qsq.query_hash
+		,qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_query_max_used_memory) AS avg_query_max_used_memory_baseline
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @BeforeStart
+		AND qsrsi.end_time < @BeforeEnd
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	ORDER BY SUM(qsrs.avg_query_max_used_memory) DESC
+	)
+	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
+	,LaterStats
 AS (
-
-                SELECT qsq.query_id,qsqt.query_sql_text,AVG(qsrs.avg_query_max_used_memory) AS avg_query_max_used_memory_late
-
-                FROM sys.query_store_query qsq
-
-                JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
-
-                JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
-
-                JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id =
-
-                qsrsi.runtime_stats_interval_id
-
-JOIN sys.query_store_query_text qsqt
-
-    ON qsq.query_text_id = qsqt.query_text_id
-
-                WHERE qsrsi.start_time >= @AfterStart
-
-                                AND qsrsi.end_time < @AfterEnd
-
-                                AND qsq.query_id IN
-
-                                (
-
-                                               
-
-                                                SELECT query_id
-
-                                                FROM FilteredTop10
-
- 
-
-                                )
-
-                GROUP BY qsq.query_hash
-
-                                ,qsq.query_id
-
-                                ,qsqt.query_sql_text
-
-                )
-
- 
-
- 
-
-                --Final output: Compare early vs. late stats
-
-SELECT f.query_hash
-
-                ,f.query_id
-
-, f.query_sql_text
-
-                ,f.avg_query_max_used_memory_early
-
-                ,l.avg_query_max_used_memory_late
-
-                ,(ISNULL(l.avg_query_max_used_memory_late, 0) - f.avg_query_max_used_memory_early) AS avg_query_max_used_memory_change
-
-FROM FilteredTop10 f
-
-LEFT JOIN LaterStats l ON f.query_id = l.query_id
-
-ORDER BY f.avg_query_max_used_memory_early DESC;
+	SELECT qsq.query_id
+		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
+		,SUM(qsrs.avg_query_max_used_memory) AS avg_query_max_used_memory_later
+		,SUM(qsrs.count_executions) AS ExecutionCount
+	FROM sys.query_store_query qsq
+	JOIN sys.query_store_plan qspt ON qsq.query_id = qspt.query_id
+	JOIN sys.query_store_runtime_stats qsrs ON qspt.plan_id = qsrs.plan_id
+	JOIN sys.query_store_runtime_stats_interval qsrsi ON qsrs.runtime_stats_interval_id = qsrsi.runtime_stats_interval_id
+	JOIN sys.query_store_query_text qsqt ON qsq.query_text_id = qsqt.query_text_id
+	WHERE qsrsi.start_time >= @AfterStart
+		AND qsrsi.end_time < @AfterEnd
+		AND qsq.query_id IN (
+			SELECT query_id
+			FROM BaselineTopQueries
+			)
+	GROUP BY qsq.query_hash
+		,qsq.query_id
+		,qsqt.query_sql_text
+	)
+--Final output: Compare early vs. late stats
+SELECT BTQ.query_hash
+	,BTQ.query_id
+	,BTQ.query_sql_text
+    ,BTQ.ExecutionCount AS BaselineExecutioncount
+    ,l.Executioncount AS LaterExecutionCount
+	,BTQ.avg_query_max_used_memory_baseline
+	,l.avg_query_max_used_memory_late
+	,(ISNULL(l.avg_query_max_used_memory_late, 0) - BTQ.avg_query_max_used_memory_baseline) AS avg_query_max_used_memory_change
+FROM BaselineTopQueries AS BTQ
+LEFT JOIN LaterStats l ON BTQ.query_id = l.query_id
+ORDER BY BTQ.avg_query_max_used_memory_baseline DESC;
 
  
