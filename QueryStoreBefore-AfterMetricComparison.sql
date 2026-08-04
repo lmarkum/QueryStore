@@ -69,7 +69,7 @@ AS (
 	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
 	,LaterCpuStats
 AS (
-	SELECT TOP qsq.query_hash
+	SELECT qsq.query_hash
 		,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_cpu_time) AS avg_cpu_time_later
@@ -96,9 +96,9 @@ SELECT BTQ.query_hash
 	,BTQ.query_sql_text
     ,BTQ.ExecutionCount AS BaselineExecutioncount
     ,l.Executioncount AS LaterExecutionCount
-	,BT.avg_cpu_time_baseline
-	,l.avg_cpu_time_late
-	,(ISNULL(l.avg_cpu_time_late, 0) - BTQ.avg_cpu_time_baseline) AS cpu_change
+	,BTQ.avg_cpu_time_baseline
+	,l.avg_cpu_time_later
+	,(ISNULL(l.avg_cpu_time_later, 0) - BTQ.avg_cpu_time_baseline) AS cpu_change
 FROM BaselineTopQueries AS BTQ
 LEFT JOIN LaterCpuStats l ON BTQ.query_id = l.query_id
 ORDER BY BTQ.avg_cpu_time_baseline DESC;
@@ -127,7 +127,8 @@ AS (
 	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
 	,LaterStats
 AS (
-	SELECT qsq.query_id
+	SELECT qsq.query_hash
+        ,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_logical_io_reads) AS avg_logical_io_reads_later
 		,SUM(qsrs.count_executions) AS ExecutionCount
@@ -153,8 +154,8 @@ SELECT BTQ.query_hash
     ,BTQ.ExecutionCount AS BaselineExecutioncount
     ,l.Executioncount AS LaterExecutionCount
 	,BTQ.avg_logical_io_reads_baseline
-	,l.avg_logical_io_reads_late
-	,(ISNULL(l.avg_logical_io_reads_late, 0) - BTQ.avg_logical_io_reads_baseline) AS avg_logical_io_reads_change
+	,l.avg_logical_io_reads_later
+	,(ISNULL(l.avg_logical_io_reads_later, 0) - BTQ.avg_logical_io_reads_baseline) AS avg_logical_io_reads_change
 FROM BaselineTopQueries AS BTQ
 LEFT JOIN LaterStats l ON BTQ.query_id = l.query_id
 ORDER BY BTQ.avg_logical_io_reads_baseline DESC;
@@ -182,7 +183,8 @@ AS (
 	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
 	,LaterStats
 AS (
-	SELECT qsq.query_id
+	SELECT qsq.query_hash
+        ,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_logical_io_writes) AS avg_logical_io_writes_later
 		,SUM(qsrs.count_executions) AS ExecutionCount
@@ -208,8 +210,8 @@ SELECT BTQ.query_hash
     ,BTQ.ExecutionCount AS BaselineExecutioncount
     ,l.Executioncount AS LaterExecutionCount
 	,BTQ.avg_logical_io_writes_baseline
-	,l.avg_logical_io_writes_late
-	,(ISNULL(l.avg_logical_io_writes_late, 0) - BTQ.avg_logical_io_writes_baseline) AS avg_logical_io_writes_change
+	,l.avg_logical_io_writes_later
+	,(ISNULL(l.avg_logical_io_writes_later, 0) - BTQ.avg_logical_io_writes_baseline) AS avg_logical_io_writes_change
 FROM BaselineTopQueries AS BTQ
 LEFT JOIN LaterStats l ON BTQ.query_id = l.query_id
 ORDER BY BTQ.avg_logical_io_writes_baseline DESC;
@@ -237,7 +239,8 @@ AS (
 	--Pass into the below the queryIDs from before the migration to retreive the metrics for those queries for after the migration.
 	,LaterStats
 AS (
-	SELECT qsq.query_id
+	SELECT qsq.query_hash
+        ,qsq.query_id
 		,LEFT(qsqt.query_sql_text, 500) AS query_sql_text
 		,SUM(qsrs.avg_query_max_used_memory) AS avg_query_max_used_memory_later
 		,SUM(qsrs.count_executions) AS ExecutionCount
@@ -263,8 +266,8 @@ SELECT BTQ.query_hash
     ,BTQ.ExecutionCount AS BaselineExecutioncount
     ,l.Executioncount AS LaterExecutionCount
 	,BTQ.avg_query_max_used_memory_baseline
-	,l.avg_query_max_used_memory_late
-	,(ISNULL(l.avg_query_max_used_memory_late, 0) - BTQ.avg_query_max_used_memory_baseline) AS avg_query_max_used_memory_change
+	,l.avg_query_max_used_memory_later
+	,(ISNULL(l.avg_query_max_used_memory_later, 0) - BTQ.avg_query_max_used_memory_baseline) AS avg_query_max_used_memory_change
 FROM BaselineTopQueries AS BTQ
 LEFT JOIN LaterStats l ON BTQ.query_id = l.query_id
 ORDER BY BTQ.avg_query_max_used_memory_baseline DESC;
