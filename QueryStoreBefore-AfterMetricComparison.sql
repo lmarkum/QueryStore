@@ -18,7 +18,7 @@ This could also be useful for a before/after comparison after any change to a qu
 
 This sort of query could be done with other query perofrmance metrics stored in Query Store.
 
- 
+ Updated 8/3/2026 to add additional metric comparisons beyond CPU.
 
 */
 
