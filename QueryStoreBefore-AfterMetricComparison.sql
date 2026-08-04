@@ -4,21 +4,35 @@ Written by: Lee Markum
 
 Date: September 2025
 
-Purpose:These queries retrieve the queryIDs, query hash and various average performance metrics for those queries in a given time range and compares the AVG metric from before and after. I choose to retreive the TOP 10 from the before and compare them to the same
-queryID values after so the query would be comparing the performance of the same queries. Some queryID values from the "before"
-snapshot may not appear in the "after" snapshot and that is the reason for the LEFT JOIN
+Purpose:
+These queries retrieve Query Store query_id values, query_hash values, and
+average performance metrics for queries executed during two different time
+ranges. The results compare the average metric values from a baseline period
+("before") with those from a comparison period ("after").
 
- 
+The goal is similar to the Query Store Tracked Queries report, but these
+queries allow you to view the top N queries simultaneously and determine
+whether each metric improved or regressed following a change.
 
-This is useful for capturing performance prior to a SQL Server migration and then after for the same set of queries.
+The script selects the TOP (10) queries from the baseline period and compares
+those same query_id values against the comparison period. This ensures that the
+comparison is performed against the same set of queries rather than whatever
+happened to be the top queries after the change. Some baseline query_id values
+may not appear during the comparison period, which is why a LEFT JOIN is used.
 
-This could also be useful for a before/after comparison after any change to a query.
+This is particularly useful when establishing a performance baseline before a
+SQL Server migration and comparing it with performance after the migration.
+It can also be used to measure the impact of query tuning, index changes,
+configuration changes, or other modifications.
 
- 
+The same approach can be applied to any performance metric stored in Query
+Store, not just CPU usage.
 
-This sort of query could be done with other query perofrmance metrics stored in Query Store.
+Updated: August 3, 2026
+- Added comparisons for additional Query Store performance metrics beyond CPU.
+- Updated the comment block and removed the repeating variable DECLARE sections.
 
- Updated 8/3/2026 to add additional metric comparisons beyond CPU.
+Requirement: Query Store must have been enabled and in ReadWrite mode during the time periods under consideration.
 
 */
 
@@ -172,21 +186,6 @@ ORDER BY f.avg_cpu_time_early DESC;
 
 --First CTE: Get top 10 intensive queries by avg_logical_io_reads from before the migration
 
- 
-
- 
-
-DECLARE @BeforeStart datetime = '2026-07-30';
-
-DECLARE @BeforeEnd   datetime = '2026-08-01 23:59:59';
-
- 
-
-DECLARE @AfterStart  datetime = '2026-08-02';
-
-DECLARE @AfterEnd    datetime = '2026-08-04';
-
- 
 
 WITH FilteredTop10
 
@@ -306,21 +305,7 @@ ORDER BY f.avg_logical_io_reads_early DESC;
 
 --First CTE: Get top 10 intensive queries by avg_logical_io_writes from before the migration
 
- 
 
- 
-
-DECLARE @BeforeStart datetime = '2026-07-30';
-
-DECLARE @BeforeEnd   datetime = '2026-08-01 23:59:59';
-
- 
-
-DECLARE @AfterStart  datetime = '2026-08-02';
-
-DECLARE @AfterEnd    datetime = '2026-08-04';
-
- 
 
 WITH FilteredTop10
 
@@ -442,19 +427,7 @@ ORDER BY f.avg_logical_io_writes_early DESC;
 
 --First CTE: Get top 10 intensive queries by avg_query_max_used_memory from before the migration
 
- 
 
-DECLARE @BeforeStart datetime = '2026-07-30';
-
-DECLARE @BeforeEnd   datetime = '2026-08-01 23:59:59';
-
- 
-
-DECLARE @AfterStart  datetime = '2026-08-02';
-
-DECLARE @AfterEnd    datetime = '2026-08-04';
-
- 
 
 WITH FilteredTop10
 
